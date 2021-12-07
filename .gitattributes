@@ -1,0 +1,4 @@
+*.mod filter=crtext
+*.md filter=crtext
+help/assign filter=crtext
+makefile filter=crtext
