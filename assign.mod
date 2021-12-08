@@ -1,51 +1,95 @@
 (*$StackSize 2000H*)
 MODULE Assign;
 
-FROM InOut IMPORT
+FROM InOut IMPORT Done,
   OpenInput, OpenOutput, CloseInput, CloseOutput, WriteString, WriteLn, 
   ReadString, Write, termCh, in, WriteCard;
 
 IMPORT InOut;
 
+FROM Strings IMPORT Length;
+FROM EZStrings IMPORT DeleteLeadingSpaces;
+
 FROM TextTools IMPORT ReadChar;
 
+FROM GSOSInterface IMPORT GSOSInString;
+
+FROM OrcaShell IMPORT SetDCB, SetVariable, StopDCB, Stop;
+
 FROM EZCommandLine IMPORT getParameters, switchPresent, getSwitchValue, 
-     deTabString;
+  deTabString, UserAborted;
 
 VAR
-  commandline : ARRAY [0..255] OF CHAR;
-  variablename : ARRAY [0..255] OF CHAR;
+  commandline   : ARRAY [0..255] OF CHAR;
+  index         : CARDINAL;
+  OK            : BOOLEAN;
+  ExportAlso    : BOOLEAN;
   
-  value:  ARRAY [0..79] OF CHAR;
-  index : CARDINAL;
-  OK : BOOLEAN;
-  ExportAlso : BOOLEAN;  
+  setParms      : SetDCB;
+  variableName  : GSOSInString;
+  value         : GSOSInString;
+  
+  stopParms     : StopDCB;
+  
   PROCEDURE GetCharTT(VAR ch: CHAR);
   TYPE
     cardCharType =
       RECORD
         CASE :BOOLEAN OF
-          TRUE: card: CARDINAL;
+          TRUE:  card : CARDINAL;
           |
-          FALSE: LSB: CHAR;
-                 HSB: CHAR;
+          FALSE: LSB  : CHAR;
+                 HSB  : CHAR;
         END;
       END;
   VAR
     cardChar : cardCharType;
-  
+
   BEGIN
     cardChar.card := ReadChar(FALSE);
     ch := cardChar.LSB;
   END GetCharTT;
+
+  PROCEDURE TrimString( a: ARRAY OF CHAR; VAR s: ARRAY OF CHAR );
+  (*
+    OPERATION:
+      Takes array in "a" and copies it into "s". The difference is that trailing
+      blanks in "a" are not copied to "s". "s" terminates with a null
+      character (0C).
+    NOTE:
+      "s" and "a" may be the same.
   
+      "s" must be at least as big as "a".
+  *)
+  VAR
+    i, j: INTEGER;
+  BEGIN
+    i := HIGH(a);
+  
+    WHILE (i >= 0 ) AND ((a[i] = ' ') OR (a[i] = 0C)) DO
+      DEC(i);
+    END;
+  
+    IF i >= 0 THEN
+      FOR j := 0 TO i DO
+        s[j] := a[j];
+      END;
+    END;
+  
+    INC(i);
+    IF i <= VAL(INTEGER, HIGH(s)) THEN
+      s[i] := 0C;
+    END;
+  END TrimString;
+
 BEGIN
   index := 0;
   OK := TRUE;
   ExportAlso := FALSE;
+  stopParms.pCount := 1;
   
-  WHILE index <= HIGH(value) DO
-    value[index] := 0C;
+  WHILE index <= HIGH(value.text) DO
+    value.text[index] := 0C;
     INC(index);
   END;
 
@@ -55,39 +99,49 @@ BEGIN
   IF switchPresent(commandline, "-e") THEN
     ExportAlso := TRUE;
   END;
-
+  
   IF switchPresent(commandline, "-a") THEN
-    getSwitchValue(commandline, "-a", variablename);
-
-    IF switchPresent(commandline, "-v") THEN
-      getSwitchValue(commandline, "-v", value);
-    ELSE
-  
-      index := 0;
-  
-      WHILE OK AND (index < 80) DO
-        GetCharTT(value[index]);
+    getSwitchValue(commandline, "-a", variableName.text);
+    variableName.length := Length(variableName.text);
     
-        IF (value[index] >= 40C) AND
-           (value[index] <= 177C) THEN
+    IF switchPresent(commandline, "-v") THEN
+      getSwitchValue(commandline, "-v", value.text);
+      value.length := Length(value.text);
+    ELSE
+      index := 0;
+      
+      Stop(stopParms);
+      
+      WHILE OK AND (index < 80) AND (NOT stopParms.stopFlag) DO
+        GetCharTT(value.text[index]);
+    
+        IF (value.text[index] >= 40C) AND
+           (value.text[index] <= 177C) THEN
           INC(index);
           OK := NOT InOut.Done;
         ELSE
-          value[index] := 0C;
+          value.text[index] := 0C;
           OK := FALSE;
         END;
-      END;
-    END;
 
+        Stop(stopParms);
+      END;
+      
+      value.length := Length(value.text);
+    END;
+    
+    DeleteLeadingSpaces(value.text);
+    TrimString(value.text, value.text);
+    
     WriteString("Variable: <");
-    WriteString(variablename); 
+    WriteString(variableName.text); 
     WriteString(">");
     WriteLn;
     WriteString("Value:    <");
-    WriteString(value);
+    WriteString(value.text);
     WriteString(">");
     WriteLn;
-
+    
     IF ExportAlso THEN
       WriteString("Export:   <TRUE>");
     ELSE
@@ -99,5 +153,5 @@ BEGIN
     WriteString("usage: assign -a <variablename> [-e] [-v value]");
     WriteLn;
   END;
-  
+
 END Assign.
