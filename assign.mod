@@ -12,24 +12,31 @@ FROM EZStrings IMPORT DeleteLeadingSpaces;
 
 FROM TextTools IMPORT ReadChar;
 
-FROM GSOSInterface IMPORT GSOSInString;
+FROM GSOSInterface IMPORT GSOSInString, GSOSInStringPtr;
 
-FROM OrcaShell IMPORT SetDCB, SetVariable, StopDCB, Stop;
+FROM OrcaShell IMPORT SetDCB, SetVariable, StopDCB, Stop, ErrorDCB, Error;
 
 FROM EZCommandLine IMPORT getParameters, switchPresent, getSwitchValue, 
   deTabString, UserAborted;
+
+FROM M2Lib IMPORT ToolError;
+
+FROM SYSTEM IMPORT 
+  ADR;
 
 VAR
   commandline   : ARRAY [0..255] OF CHAR;
   index         : CARDINAL;
   OK            : BOOLEAN;
   ExportAlso    : BOOLEAN;
+  showInfo      : BOOLEAN;
   
   setParms      : SetDCB;
   variableName  : GSOSInString;
   value         : GSOSInString;
   
   stopParms     : StopDCB;
+  errorParms    : ErrorDCB;
   
   PROCEDURE GetCharTT(VAR ch: CHAR);
   TYPE
@@ -86,6 +93,7 @@ BEGIN
   index := 0;
   OK := TRUE;
   ExportAlso := FALSE;
+  showInfo := FALSE;
   stopParms.pCount := 1;
   
   WHILE index <= HIGH(value.text) DO
@@ -100,6 +108,10 @@ BEGIN
     ExportAlso := TRUE;
   END;
   
+  IF switchPresent(commandline, "-i") THEN
+    showInfo := TRUE;
+  END;
+
   IF switchPresent(commandline, "-a") THEN
     getSwitchValue(commandline, "-a", variableName.text);
     variableName.length := Length(variableName.text);
@@ -133,24 +145,40 @@ BEGIN
     DeleteLeadingSpaces(value.text);
     TrimString(value.text, value.text);
     
-    WriteString("Variable: <");
-    WriteString(variableName.text); 
-    WriteString(">");
-    WriteLn;
-    WriteString("Value:    <");
-    WriteString(value.text);
-    WriteString(">");
-    WriteLn;
-    
-    IF ExportAlso THEN
-      WriteString("Export:   <TRUE>");
-    ELSE
-      WriteString("Export:   <FALSE>");
+    IF showInfo THEN
+      WriteString("Variable: <");
+      WriteString(variableName.text); 
+      WriteString(">");
+      WriteLn;
+      WriteString("Value:    <");
+      WriteString(value.text);
+      WriteString(">");
+      WriteLn;
+
+      IF ExportAlso THEN
+        WriteString("Export:   <TRUE>");
+      ELSE
+        WriteString("Export:   <FALSE>");
+      END;
+      WriteLn;
     END;
-    WriteLn;
+
+    setParms.pCount := 3;
+    setParms.varName := ADR(variableName);
+    setParms.value := ADR(value);
+    setParms.exportable := ExportAlso;
+    
+    (* Now set the actual variable value *)
+    SetVariable(setParms);
+    
+    IF ToolError() <> 0 THEN
+      errorParms.pCount := 1;
+      errorParms.errorNumber := ToolError();
+      Error(errorParms);
+    END
   
   ELSE
-    WriteString("usage: assign -a <variablename> [-e] [-v value]");
+    WriteString("usage: assign -a <variablename> [-i] [-e] [-v value]");
     WriteLn;
   END;
 
