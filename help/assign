@@ -1,0 +1,17 @@
+usage: assign -a <variablename> [-i] [-e] [-v value]
+
+where:
+
+-a <variablename>
+
+     specifies the variable name to which the value will be assigned.
+   
+-i display information about what is being done.
+
+-e export the variable as well
+
+-v value
+
+     specifies the value to be assigned to the variable.  if this optional
+     parameter is not provided, the command will attempt to read a value
+     from standard input (ending at the first control character).
